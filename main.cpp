@@ -6,6 +6,8 @@
 #include "stdlib.h"
 #include "string.h"
 
+#include "time.h"
+
 #include "SDL\include\SDL.h"
 #include "SDL_image\include\SDL_image.h"
 // TODO 1: Add SDL_mixer library
@@ -27,7 +29,9 @@
 #define SCROLL_SPEED 5
 #define SHIP_SPEED 3
 #define NUM_SHOTS 32
-#define SHOT_SPEED 5
+#define NUM_MISSILE_SHOTS 1
+#define SHOT_SPEED 10
+#define MISSILE_SHOT_SPEED 8
 #define MAX_KEYS 300
 
 enum KEY_STATE
@@ -55,9 +59,12 @@ struct globals
 	int ship_x;
 	int ship_y;
 	SDL_Texture* shot;
+	SDL_Texture* m_shot, *m_explosive;
 	projectile shots[NUM_SHOTS];
+	projectile m_shots;
 	int last_shot;
-	bool fire, up, down, left, right;
+	bool fire, missile, up, down, left, right;
+	bool m_explosion;
 	KEY_STATE* keyboard;
 	// TODO 4:
 	// Add pointers to store music and the laser fx
@@ -65,6 +72,9 @@ struct globals
 
 	Mix_Chunk* laserfx;
 	Mix_Music* music;
+
+	SDL_Rect mis_spr, m_expl_spr;
+	int m_expl_counter;
 
 } g;
 
@@ -86,6 +96,8 @@ void Start()
 	g.background = SDL_CreateTextureFromSurface(g.renderer, IMG_Load("background.png"));
 	g.ship = SDL_CreateTextureFromSurface(g.renderer, IMG_Load("ship.png"));
 	g.shot = SDL_CreateTextureFromSurface(g.renderer, IMG_Load("shot.png"));
+	g.m_shot = SDL_CreateTextureFromSurface(g.renderer, IMG_Load("LtR_sprites.png"));
+	g.m_explosive = SDL_CreateTextureFromSurface(g.renderer, IMG_Load("sprites.png"));
 	SDL_QueryTexture(g.background, NULL, NULL, &g.background_width, NULL);
 
 	// Create mixer --
@@ -109,10 +121,23 @@ void Start()
 	g.scroll = 0;
 	g.ship_x = 100;
 	g.ship_y = SCREEN_HEIGHT / 2;
-	g.fire = g.up = g.down = g.left = g.right = false;
+	g.fire = g.up = g.down = g.left = g.right = g.missile = false;
 	g.last_shot = 0;
 	g.keyboard = (KEY_STATE*)malloc(sizeof(KEY_STATE) * MAX_KEYS);
 	memset(g.keyboard, KEY_IDLE, MAX_KEYS);
+
+	g.mis_spr.x = 224;
+	g.mis_spr.y = 64;
+	g.mis_spr.h = 32;
+	g.mis_spr.w = 32;
+
+	g.m_expl_spr.x = 32;
+	g.m_expl_spr.y = 0;
+	g.m_expl_spr.h = 32;
+	g.m_expl_spr.w = 32;
+
+	g.m_expl_counter = 0;
+
 }
 
 // ----------------------------------------------------------------
@@ -162,6 +187,7 @@ bool CheckInput()
 	g.left = g.keyboard[SDL_SCANCODE_LEFT] == KEY_REPEAT;
 	g.right = g.keyboard[SDL_SCANCODE_RIGHT] == KEY_REPEAT;
 	g.fire = g.keyboard[SDL_SCANCODE_SPACE] == KEY_DOWN;
+	g.missile = g.keyboard[SDL_SCANCODE_Q] == KEY_DOWN;
 
 	return true;
 }
@@ -184,20 +210,20 @@ void MoveStuff()
 	}
 
 	if (g.left && g.ship_x > 0) {
-		g.ship_x -= 8;
+		g.ship_x -= 10;
 	}
 
 	if (g.right && g.ship_x < 950) {
 		g.ship_x += 10;
 	}
 
-	if(g.fire)
+	if (g.fire)
 	{
 		g.fire = false;
 
 		Mix_PlayChannel(-1, g.laserfx, 0);
 
-		if(g.last_shot == NUM_SHOTS)
+		if (g.last_shot == NUM_SHOTS)
 			g.last_shot = 0;
 
 		g.shots[g.last_shot].alive = true;
@@ -206,16 +232,49 @@ void MoveStuff()
 		g.last_shot++;
 	}
 
-	for(int i = 0; i < NUM_SHOTS; ++i)
+	for (int i = 0; i < NUM_SHOTS; ++i)
 	{
-		if(g.shots[i].alive)
+		if (g.shots[i].alive)
 		{
-			if(g.shots[i].x < SCREEN_WIDTH)
+			if (g.shots[i].x < SCREEN_WIDTH)
 				g.shots[i].x += SHOT_SPEED;
 			else
 				g.shots[i].alive = false;
 		}
 	}
+
+	if (g.missile)
+	{
+		g.missile = false;
+
+		if (!g.m_shots.alive) {
+			Mix_PlayChannel(-1, g.laserfx, 0);
+			g.m_shots.alive = true;
+			g.m_shots.x = g.ship_x + 32;
+			g.m_shots.y = g.ship_y;
+		}
+
+		else{
+			g.m_explosion = true;
+			g.m_shots.alive = false;
+		}
+	}
+
+	if (g.m_shots.alive)
+	{
+		if (g.m_shots.x < SCREEN_WIDTH)
+				g.m_shots.x += MISSILE_SHOT_SPEED;
+		else
+			g.m_shots.alive = false;
+	}
+
+	g.m_expl_counter++;
+
+	if (g.m_expl_counter >= 30) {
+		g.m_explosion = false;
+		g.m_expl_counter = 0;
+	}
+
 }
 
 // ----------------------------------------------------------------
@@ -232,13 +291,26 @@ void Draw()
 	// Remember that you have to draw the
 	// background twice to fake repetition
 
-	target.x = 0;
+	
+	
+	target.x = g.scroll;
+	target.y = 0;
+	target.w = g.background_width;
+	target.h = SCREEN_HEIGHT;
+
+	g.scroll -= 20;
+	
+	SDL_RenderCopy(g.renderer, g.background, NULL, &target);
+
+	target.x = g.scroll + g.background_width;
 	target.y = 0;
 	target.w = g.background_width;
 	target.h = SCREEN_HEIGHT;
 
 	SDL_RenderCopy(g.renderer, g.background, NULL, &target);
 
+	if (g.scroll < -(g.background_width * 2))
+		g.scroll = 0;
 
 	// Draw the ship --
 	target.x = g.ship_x;
@@ -261,6 +333,23 @@ void Draw()
 			
 		}
 	}
+
+	if (g.m_explosion) {
+		target.x = g.m_shots.x;
+		target.y = g.m_shots.y;
+		SDL_RenderCopy(g.renderer, g.m_explosive, &g.m_expl_spr, &target);
+	}
+
+	if (g.m_shots.alive)
+	{
+		target.x = g.m_shots.x;
+		target.y = g.m_shots.y;
+		SDL_RenderCopy(g.renderer, g.m_shot, &g.mis_spr , &target);
+
+	}
+
+		
+
 
 	// Finally present framebuffer
 	SDL_RenderPresent(g.renderer);
