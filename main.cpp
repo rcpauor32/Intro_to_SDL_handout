@@ -247,7 +247,7 @@ void MoveStuff()
 	{
 		g.missile = false;
 
-		if (!g.m_shots.alive) {
+		if (!g.m_shots.alive && !g.m_explosion) {
 			Mix_PlayChannel(-1, g.laserfx, 0);
 			g.m_shots.alive = true;
 			g.m_shots.x = g.ship_x + 32;
@@ -270,7 +270,7 @@ void MoveStuff()
 
 	g.m_expl_counter++;
 
-	if (g.m_expl_counter >= 30) {
+	if (g.m_expl_counter >= 40) {
 		g.m_explosion = false;
 		g.m_expl_counter = 0;
 	}
@@ -309,7 +309,7 @@ void Draw()
 
 	SDL_RenderCopy(g.renderer, g.background, NULL, &target);
 
-	if (g.scroll < -(g.background_width * 2))
+	if (g.scroll < -(g.background_width - 32))
 		g.scroll = 0;
 
 	// Draw the ship --
